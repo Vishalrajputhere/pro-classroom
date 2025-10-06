@@ -5,6 +5,9 @@ import PostAssignmentForm from './PostAssignmentForm';
 import StudentSubmissionForm from './StudentSubmissionForm';
 import SubmissionList from './SubmissionList';
 import JoinClassForm from './JoinClassForm'; 
+import ClassDetail from './ClassDetail';
+import TeacherClassDetail from './TeacherClassDetail';
+
 
 function Dashboard() {
     const [userRole, setUserRole] = useState(null);
@@ -16,81 +19,130 @@ function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [refreshTrigger, setRefreshTrigger] = useState(0); 
     const [selectedAssignmentId, setSelectedAssignmentId] = useState(null); 
+    const [selectedClass, setSelectedClass] = useState(null);
+    const [selectedTeacherClass, setSelectedTeacherClass] = useState(null);
 
-    // --- Action Handler: Triggers a complete data refresh ---
-    // This is the function passed down to the forms
+     // --- Action Handler: Triggers a complete data refresh ---
     const handleDataChange = () => {
         setRefreshTrigger(prev => prev + 1);
     };
 
-    // --- MASTER DATA FETCH FUNCTION (Defined inside the component for strict dependency) ---
-    const fetchAllData = async () => {
-        const token = localStorage.getItem('token');
-        if (!token) {
-            setLoading(false);
-            return;
-        }
-
+    // --- Utility Functions for API Calls (Unchanged, for brevity) ---
+    const fetchTeacherClasses = async () => {
         try {
-            const decoded = jwtDecode(token);
-            setUserRole(decoded.user.role); 
-            setUserId(decoded.user.id);
-            
-            // --- Teacher Data Fetch ---
-            if (decoded.user.role === 'teacher') {
-                const [classesRes, assignmentsRes] = await Promise.all([
-                    fetch(`http://localhost:5000/api/classes/teacher`, { headers: { 'x-auth-token': token } }),
-                    fetch(`http://localhost:5000/api/assignments/teacher/all`, { headers: { 'x-auth-token': token } })
-                ]);
-
-                if (classesRes.ok) setTeacherClasses(await classesRes.json());
-                if (assignmentsRes.ok) setTeacherAssignments(await assignmentsRes.json());
-            } 
-            // --- Student Data Fetch ---
-            else {
-                const enrolledClassesRes = await fetch(`http://localhost:5000/api/classes/student`, { headers: { 'x-auth-token': token } });
-                
-                if (enrolledClassesRes.ok) {
-                    const enrolledClasses = await enrolledClassesRes.json();
-                    setStudentEnrolledClasses(enrolledClasses);
-
-                    const assignmentFetches = enrolledClasses.map(cls => 
-                        fetch(`http://localhost:5000/api/assignments/class/${cls._id}`, { headers: { 'x-auth-token': token } })
-                    );
-                    const assignmentsResponses = await Promise.all(assignmentFetches);
-                    
-                    let allAssignments = [];
-                    for (const res of assignmentsResponses) {
-                        if (res.ok) {
-                            allAssignments = allAssignments.concat(await res.json());
-                        }
-                    }
-                    setStudentAssignments(allAssignments);
-                }
+            const token = localStorage.getItem('token');
+            const response = await fetch(`http://localhost:5000/api/classes/teacher`, {
+                headers: { 'x-auth-token': token },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setTeacherClasses(data);
             }
         } catch (error) {
-            console.error("Master data fetch failed:", error);
-            // On failure (e.g. 401), force logout
-            localStorage.removeItem('token');
-            window.location.reload();
-        } finally {
-            setLoading(false);
+            console.error("Failed to fetch classes:", error);
         }
     };
 
-
-    // --- Core Data Fetch Logic (Runs on Mount & Refresh Trigger) ---
-    useEffect(() => {
-        setLoading(true);
-        fetchAllData();
-    }, [refreshTrigger]); // DEPENDS ONLY ON THE TRIGGER
-
-    // ... (onLogout and Render Logic remain the same)
+    const fetchTeacherAssignments = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`http://localhost:5000/api/assignments/teacher/all`, {
+                headers: { 'x-auth-token': token },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setTeacherAssignments(data);
+            }
+        } catch (error) {
+            console.error("Failed to fetch assignments:", error);
+        }
+    };
     
+    // ... (fetchStudentData, onLogout functions are the same)
     const onLogout = () => {
         localStorage.removeItem('token');
         window.location.reload();
     };
+
+    const fetchStudentData = async (userId) => {
+    try {
+        const token = localStorage.getItem('token');
+        const headers = { 'x-auth-token': token };
+
+        // 1. Fetch enrolled classes
+        const enrolledClassesRes = await fetch(`http://localhost:5000/api/classes/student`, { headers });
+        
+        if (!enrolledClassesRes.ok) throw new Error("Failed to fetch enrolled classes.");
+        
+        const enrolledClasses = await enrolledClassesRes.json();
+        setStudentEnrolledClasses(enrolledClasses);
+
+        // 2. Prepare all assignment fetches
+        const assignmentFetches = enrolledClasses.map(cls => 
+            fetch(`http://localhost:5000/api/assignments/class/${cls._id}`, { headers })
+        );
+
+        // 3. CRITICAL FIX: Use Promise.allSettled to ensure we process results 
+        // even if one assignment fetch fails (prevents indefinite loading).
+        const assignmentsResponses = await Promise.allSettled(assignmentFetches);
+        
+        // 4. Process all assignment data into one array
+        let allAssignments = [];
+        for (const result of assignmentsResponses) {
+            if (result.status === 'fulfilled' && result.value.ok) {
+                const data = await result.value.json();
+                allAssignments = allAssignments.concat(data);
+            }
+        }
+
+        // Update the assignments state
+        setStudentAssignments(allAssignments);
+
+    } catch (error) {
+        // Log the error but continue to finally block
+        console.error("Failed to fetch student data:", error);
+    } finally {
+        // GUARANTEE the loading spinner is hidden
+        setLoading(false); 
+    }
+};
+
+
+    // --- Core Data Fetch Logic (Runs on Mount & Refresh Trigger) ---
+    useEffect(() => {
+        const token = localStorage.getItem('token');
+        if (token) {
+            try {
+                const decoded = jwtDecode(token);
+                setUserRole(decoded.user.role); 
+                setUserId(decoded.user.id);
+                
+                if (decoded.user.role === 'teacher') {
+                    // TEACHER LOGIC: Fetches classes and assignments
+                    Promise.all([fetchTeacherClasses(), fetchTeacherAssignments()]).finally(() => setLoading(false));
+                } else {
+                    // STUDENT LOGIC: CRITICAL FIX - Call fetchStudentData and set loading to false
+                    fetchStudentData(decoded.user.id).finally(() => setLoading(false));
+                }
+            } catch (error) {
+                // Catches token decoding errors
+                localStorage.removeItem('token');
+                window.location.reload();
+            }
+        } else {
+            setLoading(false);
+        }
+    }, [refreshTrigger]); 
+
+
+    // --- Helper Functions for UI ---
+    const getSubmissionColor = (count) => {
+        if (count > 0) return "text-green-600 bg-green-100";
+        return "text-gray-600 bg-gray-200";
+    };
+
+
+    // --- Render Logic ---
 
     if (loading) {
         return (
@@ -103,13 +155,106 @@ function Dashboard() {
     // --- TEACHER VIEW ---
     if (userRole === 'teacher') {
         
-        // 1. Detail View: Show Submissions List
+        // 1. Assignment Submission Report View (Highest Priority)
         if (selectedAssignmentId) {
             return (
-                <div className="max-w-6xl mx-auto mt-10 p-8 bg-white rounded-xl shadow-2xl border border-blue-100">
+                <div className="max-w-7xl mx-auto py-4">
                     <SubmissionList 
                         assignmentId={selectedAssignmentId} 
+                        // Back button returns to the class detail view
                         onBack={() => setSelectedAssignmentId(null)} 
+                    />
+                </div>
+            );
+        }
+
+        // 2. Class Detail View (Assignments List for one class)
+        if (selectedTeacherClass) {
+            return (
+                <div className="max-w-7xl mx-auto py-4">
+                    <TeacherClassDetail 
+                        classId={selectedTeacherClass._id}
+                        className={selectedTeacherClass.name}
+                        // Back button returns to the main class list view
+                        onBack={() => setSelectedTeacherClass(null)} 
+                        // Clicking an assignment sets the final submission report view
+                        onSelectAssignment={setSelectedAssignmentId}
+                    />
+                </div>
+            );
+        }
+
+        // 3. Main Teacher Dashboard (Class List Landing Page)
+        return (
+            <div className="max-w-7xl mx-auto p-8 bg-white rounded-xl shadow-2xl border border-indigo-100 space-y-10">
+                <h1 className="text-4xl font-extrabold text-gray-800 border-b pb-3">
+                    Your Classes
+                </h1>
+                
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-10">
+                    
+                    {/* Left Column: Forms (3/12 width) */}
+                    <div className="md:col-span-3 space-y-6">
+                        <PostAssignmentForm teacherClasses={teacherClasses} onAssignmentPosted={handleDataChange} /> 
+                        <CreateClassForm onClassCreated={handleDataChange} />
+
+                        {/* Enhanced Class Quick-View (Unclickable, but useful info) */}
+                        <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-xl shadow-md">
+                            <h3 className="font-bold text-indigo-700 mb-2 border-b pb-1">
+                                Info Panel
+                            </h3>
+                            <p className="text-sm">Total Classes: {teacherClasses.length}</p>
+                            <p className="text-sm">Total Assignments: {teacherAssignments.length}</p>
+                        </div>
+                    </div>
+                    
+                    {/* Right Column: Class Card List (9/12 width) */}
+                    <div className="md:col-span-9 p-6 bg-gray-50 rounded-xl shadow-inner">
+                        <h2 className="text-2xl font-bold mb-6 border-b pb-2">
+                            Class Administration ({teacherClasses.length})
+                        </h2>
+                        
+                        {teacherClasses.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {teacherClasses.map((cls) => (
+                                    // Teacher Class Card
+                                    <div 
+                                        key={cls._id} 
+                                        onClick={() => setSelectedTeacherClass(cls)} // <-- Navigation on click
+                                        className="bg-indigo-600 text-white p-6 rounded-xl shadow-xl cursor-pointer hover:bg-indigo-700 transition duration-300 transform hover:scale-105"
+                                    >
+                                        <h3 className="text-2xl font-bold truncate">{cls.name}</h3>
+                                        <p className="text-indigo-200 mt-2">
+                                            Students Enrolled: {cls.students ? cls.students.length : 'N/A'}
+                                        </p>
+                                        <div className="mt-4 pt-3 border-t border-indigo-400">
+                                            <span className="font-mono bg-indigo-500 text-sm py-1 px-2 rounded">
+                                                Code: {cls.classCode}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="text-gray-500 p-4 bg-yellow-100 rounded-lg">No classes created yet. Use the form on the left!</p>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // --- STUDENT VIEW (DYNAMIC) ---
+    if (userRole === 'student') {
+
+        // 1. Class Detail View (If a class card is clicked)
+        if (selectedClass) {
+            return (
+                <div className="max-w-7xl mx-auto py-4">
+                    <ClassDetail 
+                        classId={selectedClass._id}
+                        className={selectedClass.name}
+                        onBack={() => setSelectedClass(null)} 
                     />
                     <button onClick={onLogout} className="mt-8 bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-150 ease-in-out shadow-md">
                         Logout
@@ -117,119 +262,54 @@ function Dashboard() {
                 </div>
             );
         }
-
-        // 2. Main Teacher Dashboard
+        
+        // 2. Class List View (The main landing page)
         return (
-            <div className="max-w-6xl mx-auto mt-10 p-8 bg-white rounded-xl shadow-2xl border border-blue-100">
-                <h1 className="text-4xl font-extrabold text-gray-800 mb-4 border-b pb-2">
-                    Teacher Dashboard
+            <div className="max-w-7xl mx-auto p-8 bg-white rounded-xl shadow-2xl border border-green-100 space-y-8">
+                <h1 className="text-4xl font-extrabold text-gray-800 border-b pb-2">
+                    Your Classes
                 </h1>
                 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-6">
-                    
-                    {/* Left Column: Teacher Forms */}
-                    <div className="md:col-span-1 space-y-8">
-                        {/* PASS HANDLE DATA CHANGE HERE */}
-                        <CreateClassForm onClassCreated={handleDataChange} />
-                        <PostAssignmentForm teacherClasses={teacherClasses} onAssignmentPosted={handleDataChange} /> 
-                    </div>
-                    
-                    {/* Right Column: Assignments List & Results */}
-                    <div className="md:col-span-2 p-4 bg-gray-50 rounded-lg shadow-inner">
-                        <h2 className="text-2xl text-black font-bold mb-4 border-b pb-2">Assignments ({teacherAssignments.length})</h2>
-                        {teacherAssignments.length > 0 ? (
-                            <ul className="space-y-3">
-                                {teacherAssignments.map((assignment) => (
-                                    <li key={assignment._id} className="p-4 bg-white border border-gray-200 rounded-md shadow-lg flex justify-between items-center">
-                                        
-                                        {/* Assignment Info */}
-                                        <div>
-                                            <span className="font-extrabold text-lg text-gray-800">{assignment.title}</span> 
-                                            <p className="text-sm text-gray-500">Due: {new Date(assignment.dueDate).toLocaleDateString()}</p>
-                                            <div className="text-center font-bold text-sm">
-                                                <p className="text-blue-600 text-xl">{assignment.submissionCount}</p>
-                                                <p className="text-gray-500">Submissions</p>
-                                            </div>
-                                        </div>
-
-                                        {/* Action Button */}
-                                        <button 
-                                            onClick={() => setSelectedAssignmentId(assignment._id)} 
-                                            className="bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-md text-sm font-semibold transition duration-150"
-                                        >
-                                            View Submissions
-                                        </button>
-                                    </li>
-                                ))}
-                            </ul>
-                        ) : (
-                            <p className="text-gray-500">No assignments posted yet. Use the form on the left!</p>
-                        )}
-                    </div>
+                <div className="space-y-6">
+                    <JoinClassForm onClassJoined={handleDataChange} />
                 </div>
-                
+
+                <h2 className="text-2xl font-bold border-b pb-2">Enrolled Classes ({studentEnrolledClasses.length})</h2>
+
+                {studentEnrolledClasses.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        {studentEnrolledClasses.map(cls => (
+                            // Class Card UI
+                            <div 
+                                key={cls._id} 
+                                onClick={() => setSelectedClass(cls)} // <-- Navigation on click
+                                className="bg-indigo-600 text-white p-6 rounded-xl shadow-xl cursor-pointer hover:bg-indigo-700 transition duration-300 transform hover:scale-105"
+                            >
+                                <h3 className="text-2xl font-bold truncate">{cls.name}</h3>
+                                <p className="text-indigo-200 mt-1">Assignments: {studentAssignments.filter(a => a.class === cls._id).length}</p>
+                                <div className="mt-4 pt-3 border-t border-indigo-400">
+                                    <span className="font-mono bg-indigo-500 text-sm py-1 px-2 rounded">
+                                        Code: {cls.classCode}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="text-gray-500 p-4 bg-yellow-50 rounded-lg">
+                        You are not enrolled in any classes yet. Use the Join Class form above!
+                    </p>
+                )}
+
                 <button onClick={onLogout} className="mt-8 bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-150 ease-in-out shadow-md">
                     Logout
                 </button>
             </div>
         );
     }
-
-    // --- STUDENT VIEW (DYNAMIC) ---
-    return (
-        <div className="max-w-6xl mx-auto mt-10 p-8 bg-white rounded-xl shadow-2xl border border-green-100">
-            <h1 className="text-4xl font-extrabold text-gray-800 mb-4 border-b pb-2">
-                Student Dashboard
-            </h1>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-6">
-                
-                {/* Left Column: Join Class Form */}
-                <div className="lg:col-span-1">
-                    <JoinClassForm onClassJoined={handleDataChange} />
-                    
-                    {/* Display Enrolled Classes */}
-                    <div className="mt-6 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
-                         <h3 className="font-semibold text-indigo-700 mb-2 border-b">Your Classes</h3>
-                         {studentEnrolledClasses.length > 0 ? (
-                            <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
-                                {studentEnrolledClasses.map(cls => (
-                                    <li key={cls._id}>
-                                        {cls.name} (<span className="font-mono text-indigo-600">{cls.classCode}</span>)
-                                    </li>
-                                ))}
-                            </ul>
-                         ) : (
-                            <p className="text-sm text-gray-500">Not enrolled in any classes yet.</p>
-                         )}
-                    </div>
-                </div>
-                
-                {/* Right Column: Assignments List */}
-                <div className="lg:col-span-2 space-y-6">
-                    <h2 className="text-2xl font-bold border-b pb-2">Assignments (From All Joined Classes)</h2>
-                    
-                    {studentAssignments.length > 0 ? (
-                        <div className="grid grid-cols-1 gap-6">
-                            {studentAssignments.map((assignment) => (
-                                <div key={assignment._id} className="p-5 bg-gray-50 border border-gray-200 rounded-xl shadow-sm">
-                                    <h3 className="text-xl font-bold text-blue-700 mb-2">{assignment.title}</h3>
-                                    <p className="text-sm text-gray-500 mb-4">Due: {new Date(assignment.dueDate).toLocaleDateString()}</p>
-                                    <StudentSubmissionForm assignmentId={assignment._id} /> 
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <p className="text-gray-500 p-4 bg-yellow-50 rounded-lg">No assignments available. Join a class using a code!</p>
-                    )}
-                </div>
-            </div>
-
-            <button onClick={onLogout} className="mt-8 bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-150 ease-in-out shadow-md">
-                Logout
-            </button>
-        </div>
-    );
+    
+    // Fallback/Default return
+    return null;
 }
 
 export default Dashboard;

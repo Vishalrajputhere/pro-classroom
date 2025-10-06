@@ -1,7 +1,7 @@
 import { useState } from 'react';
+import { jwtDecode } from 'jwt-decode';
 
 function Auth() {
-    // State for managing form inputs
     const [formData, setFormData] = useState({
         username: '',
         email: '',
@@ -47,106 +47,100 @@ function Auth() {
                     setIsLogin(true);
                 }
             } else {
-                setError(data.msg || 'An unknown error occurred.');
+                setError(data.msg || 'Authentication failed. Check credentials.');
             }
         } catch (err) {
-            setError('Could not connect to the server. Check if the backend is running.'+err);
+            setError('Network error. Check server status.');
         }
     };
 
-    return (
-        <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow-xl border border-gray-200">
-            <h2 className="text-3xl font-bold text-center mb-6 text-gray-800">
-                {isLogin ? 'Sign In' : 'Create Account'}
-            </h2>
-            
-            {error && (
-                <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md">
-                    {error}
-                </div>
-            )}
-            
-            {successMsg && (
-                <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded-md">
-                    {successMsg}
-                </div>
-            )}
+    const inputClasses = "w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-gray-900 bg-white";
 
-            <form onSubmit={onSubmit} className="space-y-4">
-                {!isLogin && (
-                    <div>
-                        <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-                        <input
-                            type="text"
-                            id="username"
-                            name="username"
-                            value={username}
-                            onChange={onChange}
-                            required
-                            // FIX: Added text-gray-900 to ensure dark text visibility
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                        />
+    return (
+        // The main layout wrapper: full screen minus navbar height
+        <div className="grid grid-cols-1 md:grid-cols-12 w-11/12 max-w-6xl mx-auto my-12 bg-white rounded-3xl shadow-2xl overflow-hidden min-h-[70vh]">
+            
+            {/* Left Column: Image/Branding (Modern Look) */}
+            <div className="hidden md:flex md:col-span-7 bg-indigo-700 items-center justify-center p-12">
+                <div className="text-center space-y-6">
+                    <h1 className="text-5xl font-extrabold text-white">
+                        Pro Classroom
+                    </h1>
+                    <p className="text-indigo-200 text-xl font-light">
+                        The ultimate platform for secure assignment submission and plagiarism detection.
+                    </p>
+                    <div className="w-full">
+                        {/* Placeholder for a relevant image/SVG */}
+                         
+                    </div>
+                </div>
+            </div>
+
+            {/* Right Column: Sign In Form */}
+            <div className="col-span-12 md:col-span-5 flex flex-col justify-center p-8 sm:p-12">
+                <h2 className="text-4xl font-bold mb-8 text-center text-gray-800">
+                    {isLogin ? 'Welcome Back' : 'Get Started'}
+                </h2>
+                
+                {/* Error/Success Messages */}
+                {error && (
+                    <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md">
+                        {error}
                     </div>
                 )}
-                <div>
-                    <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <input
-                        type="email"
-                        id="email"
-                        name="email"
-                        value={email}
-                        onChange={onChange}
-                        required
-                        // FIX: Added text-gray-900
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                    />
-                </div>
-                <div>
-                    <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                    <input
-                        type="password"
-                        id="password"
-                        name="password"
-                        value={password}
-                        onChange={onChange}
-                        required
-                        // FIX: Added text-gray-900
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                    />
-                </div>
-                {!isLogin && (
-                    <div>
-                        <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                        <select
-                            id="role"
-                            name="role"
-                            value={role}
-                            onChange={onChange}
-                            // FIX: Added text-gray-900
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                        >
-                            <option value="student">Student</option>
-                            <option value="teacher">Teacher</option>
-                        </select>
+                {successMsg && (
+                    <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded-md">
+                        {successMsg}
                     </div>
                 )}
-                <button
-                    type="submit"
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-150 ease-in-out"
+
+                <form onSubmit={onSubmit} className="space-y-6">
+                    {/* Username Field (Register Only) */}
+                    {!isLogin && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                            <input type="text" name="username" value={username} onChange={onChange} required className={inputClasses} />
+                        </div>
+                    )}
+                    
+                    {/* Email Field */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input type="email" name="email" value={email} onChange={onChange} required className={inputClasses} />
+                    </div>
+                    
+                    {/* Password Field */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                        <input type="password" name="password" value={password} onChange={onChange} required className={inputClasses} />
+                    </div>
+                    
+                    {/* Role Selection (Register Only) */}
+                    {!isLogin && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                            <select name="role" value={role} onChange={onChange} className={inputClasses}>
+                                <option value="student">Student</option>
+                                <option value="teacher">Teacher</option>
+                            </select>
+                        </div>
+                    )}
+
+                    <button
+                        type="submit"
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-md transition duration-150 shadow-md"
+                    >
+                        {isLogin ? 'Log In' : 'Create Account'}
+                    </button>
+                </form>
+
+                <p
+                    onClick={() => { setIsLogin(!isLogin); setError(null); setSuccessMsg(null); }}
+                    className="mt-6 text-center text-sm text-indigo-600 hover:text-indigo-800 cursor-pointer font-medium"
                 >
-                    {isLogin ? 'Login' : 'Register'}
-                </button>
-            </form>
-            <p
-                onClick={() => {
-                    setIsLogin(!isLogin);
-                    setError(null); 
-                    setSuccessMsg(null);
-                }}
-                className="mt-6 text-blue-600 hover:text-blue-800 cursor-pointer text-sm"
-            >
-                {isLogin ? 'Need an account? Register' : 'Already have an account? Login'}
-            </p>
+                    {isLogin ? 'Need an account? Register Here' : 'Already have an account? Log In'}
+                </p>
+            </div>
         </div>
     );
 }
