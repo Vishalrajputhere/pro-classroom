@@ -1,115 +1,38 @@
-<<<<<<< HEAD
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch } from "../api/api";
 
 function SubmissionList({ assignmentId, onBack }) {
   const [submissions, setSubmissions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
 
-  // 📥 Fetch submissions for assignment
   useEffect(() => {
-    const fetchSubmissions = async () => {
-      try {
-        setLoading(true);
-        const data = await apiFetch(
-          `/api/submissions/assignment/${assignmentId}`
-        );
-        setSubmissions(data);
-      } catch (err) {
-        setError(err.message || "Failed to load submissions");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchSubmissions();
+    apiFetch(`/api/submissions/assignment/${assignmentId}`).then(
+      setSubmissions
+    );
   }, [assignmentId]);
 
-  if (loading) {
-    return <p className="mt-10 text-center">Loading submissions...</p>;
-  }
-
   return (
-    <div className="mt-8">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-3xl font-bold">Assignment Submissions</h2>
-        <button
-          onClick={onBack}
-          className="bg-gray-200 hover:bg-gray-300 px-4 py-2 rounded-md"
-        >
-          ← Back
-        </button>
-      </div>
+    <div>
+      <button onClick={onBack} className="mb-4 text-indigo-600">
+        ← Back
+      </button>
 
-      {/* Error */}
-      {error && <p className="text-red-600 font-medium mb-4">{error}</p>}
+      <h2 className="text-2xl font-bold mb-4">Submissions</h2>
 
-      {/* No submissions */}
-      {submissions.length === 0 && !error && (
-        <p className="text-gray-600">
-          No students have submitted this assignment yet.
-        </p>
-      )}
-
-      {/* Submissions Table */}
-      {submissions.length > 0 && (
-        <div className="overflow-x-auto bg-white rounded-xl shadow border">
-          <table className="min-w-full border-collapse">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
-                  Student
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
-                  Similarity %
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
-                  Compared With
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
-                  Status
-                </th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {submissions.map((sub) => {
-                const similarity = Math.round((sub.similarityScore || 0) * 100);
-
-                return (
-                  <tr key={sub._id} className="border-t">
-                    <td className="px-6 py-4">
-                      {sub.student?.username || "Unknown"}
-                    </td>
-
-                    <td className="px-6 py-4">{similarity}%</td>
-
-                    <td className="px-6 py-4">
-                      {sub.matchedWith ? sub.matchedWith.username : "—"}
-                    </td>
-
-                    <td className="px-6 py-4">
-                      {similarity >= 70 ? (
-                        <span className="text-red-600 font-semibold">
-                          High Plagiarism
-                        </span>
-                      ) : similarity >= 40 ? (
-                        <span className="text-yellow-600 font-semibold">
-                          Medium Risk
-                        </span>
-                      ) : (
-                        <span className="text-green-600 font-semibold">
-                          Safe
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      {submissions.length === 0 ? (
+        <p>No submissions yet.</p>
+      ) : (
+        <div className="space-y-4">
+          {submissions.map((s) => (
+            <div
+              key={s._id}
+              className={`p-4 rounded shadow ${
+                s.similarityScore > 50 ? "bg-red-100" : "bg-green-100"
+              }`}
+            >
+              <p className="font-semibold">{s.student.username}</p>
+              <p>Similarity: {s.similarityScore}%</p>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -117,103 +40,3 @@ function SubmissionList({ assignmentId, onBack }) {
 }
 
 export default SubmissionList;
-=======
-import React, { useState, useEffect } from 'react';
-
-function SubmissionList({ assignmentId, onBack }) {
-    const [submissions, setSubmissions] = useState([]);
-    const [assignmentDetails, setAssignmentDetails] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-
-    useEffect(() => {
-        const fetchSubmissions = async () => {
-            setLoading(true);
-            try {
-                const token = localStorage.getItem('token');
-                const response = await fetch(`http://localhost:5000/api/assignments/submissions/${assignmentId}`, {
-                    headers: { 'x-auth-token': token },
-                });
-                const data = await response.json();
-                
-                if (response.ok) {
-                    setSubmissions(data);
-                    
-                    // CRITICAL: Extract assignment details from the first submission object
-                    if (data.length > 0 && data[0].assignment) {
-                        setAssignmentDetails(data[0].assignment);
-                    }
-                } else {
-                    setError(data.msg || "Failed to fetch submissions.");
-                }
-            } catch (err) {
-                setError("Network error fetching submissions.");
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchSubmissions();
-    }, [assignmentId]);
-
-    const getScoreColor = (score) => {
-        if (score >= 70) return "bg-red-200 text-red-800 border-red-500"; // High Plagiarism
-        if (score >= 40) return "bg-yellow-100 text-yellow-800 border-yellow-500"; // Moderate Plagiarism
-        return "bg-green-100 text-green-800 border-green-500"; // Low/None Plagiarism
-    };
-
-    if (loading) return <p className="text-center py-8 text-blue-500">Loading Submissions and Report...</p>;
-    if (error) return <p className="text-center py-8 text-red-500 font-bold">{error}</p>;
-
-    return (
-        <div className="space-y-6">
-            <button onClick={onBack} className="bg-gray-300 hover:bg-gray-400 text-gray-800 py-2 px-4 rounded-md transition duration-150 shadow-sm">
-                &larr; Back to Dashboard
-            </button>
-            
-            {/* Display Assignment Title */}
-            <div className="border-b pb-4">
-                <h2 className="text-4xl font-extrabold text-indigo-700">
-                    {assignmentDetails ? assignmentDetails.title : 'Assignment Report'}
-                </h2>
-                <p className="text-gray-600 mt-1">{assignmentDetails ? assignmentDetails.description : ''}</p>
-            </div>
-
-            <h3 className="text-2xl font-bold text-gray-800">Student Submissions ({submissions.length})</h3>
-
-            {submissions.length === 0 ? (
-                <p className="p-4 bg-gray-100 rounded-lg text-gray-600">No submissions found for this assignment.</p>
-            ) : (
-                <ul className="space-y-4">
-                    {submissions.map((sub) => (
-                        <li key={sub._id} className="p-4 bg-white rounded-xl shadow-lg flex justify-between items-center border border-gray-200">
-                            
-                            {/* Student Info (Accessing the populated 'student' object) */}
-                            <div>
-                                {/* Check if student object exists before accessing properties */}
-                                {sub.student ? (
-                                    <>
-                                        <p className="font-semibold text-lg text-gray-900">{sub.student.username}</p>
-                                        <p className="text-sm text-gray-500">{sub.student.email}</p>
-                                    </>
-                                ) : (
-                                    <p className="font-semibold text-lg text-red-500">Student Data Missing</p>
-                                )}
-                                <p className="text-sm text-gray-500 mt-1">Submitted on: {new Date(sub.createdAt).toLocaleDateString()}</p>
-                            </div>
-
-                            {/* Plagiarism Score */}
-                            <div className={`p-4 rounded-xl font-extrabold text-2xl border-l-4 ${getScoreColor(sub.similarityScore)}`}>
-                                {sub.similarityScore}%
-                                <p className="text-sm font-normal pt-1">Similarity Score</p>
-                            </div>
-                        </li>
-                    ))}
-                </ul>
-            )}
-        </div>
-    );
-}
-
-export default SubmissionList;
->>>>>>> 073f7c55b2eb5c86d7b785dc51a71b800e35acf3
