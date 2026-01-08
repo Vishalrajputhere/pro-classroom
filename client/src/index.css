@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+
+/* --- CRITICAL FINAL LAYOUT FIX --- */
+/* These styles ensure the whole page canvas is available for Tailwind's min-h-screen */
+html, body, #root {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+/* Ensure React root container also takes full height */
+#root {
+    min-height: 100vh;
+}
+
+/* --- END FIX --- */
