@@ -1,71 +1,77 @@
-const fs = require('fs');
-const natural = require('natural');
-const TfIdf = natural.TfIdf;
+const axios = require("axios");
+const pdfParse = require("pdf-parse");
 
-/// 1. Function to extract text from a file path (now simplified for TXT)
-const extractTextFromPDF = async (filePath) => {
-    // --- PURE JAVASCRIPT FIX: No external libraries, just read the file ---
+/**
+ * Extract text from TXT or PDF (Cloudinary URL)
+ */
+async function extractTextFromPDF(fileUrl) {
+  try {
+    // Download file as buffer
+    const response = await axios.get(fileUrl, {
+      responseType: "arraybuffer",
+    });
+
+    const buffer = Buffer.from(response.data);
+
+    // Try PDF parse
     try {
-        // Check file extension to know how to read it
-        if (filePath.endsWith('.txt')) {
-            // Read TXT files directly with the Node fs module
-            return fs.readFileSync(filePath, 'utf-8');
-        }
-        // If it's still a PDF, we'll try to read the buffer (but assume it will crash/fail)
-        console.warn('Attempting to process non-TXT file with backup method...');
-        
-        // Final fallback using the problematic library (for completeness)
-        const pdf = await import('pdf-parse');
-        const dataBuffer = fs.readFileSync(filePath);
-        const data = await pdf.default(dataBuffer);
-        return data.text;
-    } catch (error) {
-        console.error("Error extracting text from file (using TXT fallback):", error.message);
-        return "";
+      const data = await pdfParse(buffer);
+      return data.text || "";
+    } catch (pdfErr) {
+      // Fallback: treat as text
+      return buffer.toString("utf-8");
     }
-};
+  } catch (err) {
+    console.error("Text extraction failed:", err.message);
+    return "";
+  }
+}
 
-// 2. Function to calculate Cosine Similarity (This logic is already correct)
-const calculateCosineSimilarity = (textA, textB) => {
-    if (!textA || !textB) return 0;
-    
-    const tfidf = new TfIdf();
-    
-    tfidf.addDocument(textA);
-    tfidf.addDocument(textB);
-    
-    const termsA = {};
-    const termsB = {};
-    
-    tfidf.listTerms(0).forEach(item => { termsA[item.term] = item.tfidf; });
-    tfidf.listTerms(1).forEach(item => { termsB[item.term] = item.tfidf; });
+/**
+ * Simple cosine similarity
+ */
+function calculateCosineSimilarity(text1, text2) {
+  if (!text1 || !text2) return 0;
 
-    const allTerms = new Set([...Object.keys(termsA), ...Object.keys(termsB)]);
+  const tokenize = (text) =>
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "")
+      .split(/\s+/)
+      .filter(Boolean);
 
-    let dotProduct = 0;
-    let magnitudeA = 0;
-    let magnitudeB = 0;
+  const tokens1 = tokenize(text1);
+  const tokens2 = tokenize(text2);
 
-    for (const term of allTerms) {
-        const scoreA = termsA[term] || 0;
-        const scoreB = termsB[term] || 0;
+  const freq = (tokens) => {
+    const map = {};
+    tokens.forEach((t) => (map[t] = (map[t] || 0) + 1));
+    return map;
+  };
 
-        dotProduct += scoreA * scoreB;
-        magnitudeA += scoreA * scoreA;
-        magnitudeB += scoreB * scoreB;
-    }
+  const f1 = freq(tokens1);
+  const f2 = freq(tokens2);
 
-    magnitudeA = Math.sqrt(magnitudeA);
-    magnitudeB = Math.sqrt(magnitudeB);
+  const allWords = new Set([...Object.keys(f1), ...Object.keys(f2)]);
 
-    if (magnitudeA * magnitudeB === 0) return 0;
+  let dot = 0,
+    mag1 = 0,
+    mag2 = 0;
 
-    const similarity = dotProduct / (magnitudeA * magnitudeB);
-    
-    return Math.round(similarity * 100);
-};
+  allWords.forEach((w) => {
+    const v1 = f1[w] || 0;
+    const v2 = f2[w] || 0;
+    dot += v1 * v2;
+    mag1 += v1 * v1;
+    mag2 += v2 * v2;
+  });
+
+  if (!mag1 || !mag2) return 0;
+
+  return Math.round((dot / (Math.sqrt(mag1) * Math.sqrt(mag2))) * 100);
+}
 
 module.exports = {
-    extractTextFromPDF,
-    calculateCosineSimilarity
+  extractTextFromPDF,
+  calculateCosineSimilarity,
 };

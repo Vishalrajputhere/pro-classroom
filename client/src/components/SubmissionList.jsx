@@ -12,25 +12,44 @@ function SubmissionList({ assignmentId, onBack }) {
 
   return (
     <div>
-      <button onClick={onBack} className="mb-4 text-indigo-600">
+      <button onClick={onBack} className="mb-4 text-indigo-600 font-medium">
         ← Back
       </button>
 
-      <h2 className="text-2xl font-bold mb-4">Submissions</h2>
+      <h2 className="text-2xl font-bold mb-6">Student Submissions</h2>
 
       {submissions.length === 0 ? (
-        <p>No submissions yet.</p>
+        <p className="text-gray-600">No submissions yet.</p>
       ) : (
         <div className="space-y-4">
           {submissions.map((s) => (
             <div
               key={s._id}
-              className={`p-4 rounded shadow ${
-                s.similarityScore > 50 ? "bg-red-100" : "bg-green-100"
+              className={`p-5 rounded-xl shadow border ${
+                s.similarityScore > 50
+                  ? "bg-red-50 border-red-200"
+                  : "bg-green-50 border-green-200"
               }`}
             >
-              <p className="font-semibold">{s.student.username}</p>
-              <p>Similarity: {s.similarityScore}%</p>
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="font-semibold text-lg">{s.student.username}</p>
+                  <p className="text-sm text-gray-600">
+                    Similarity:{" "}
+                    <span className="font-bold">{s.similarityScore}%</span>
+                  </p>
+                </div>
+
+                {/* ✅ Cloudinary Submission File */}
+                <a
+                  href={s.filePath}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm text-indigo-600 underline"
+                >
+                  View Submission
+                </a>
+              </div>
             </div>
           ))}
         </div>

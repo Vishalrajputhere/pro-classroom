@@ -1,87 +1,94 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from "react";
+import { apiFetch } from "../api/api";
+import PostAssignmentForm from "./PostAssignmentForm";
 
-function TeacherClassDetail({ classId, className, onBack, onSelectAssignment }) {
-    const [assignments, setAssignments] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
+function TeacherClassDetail({
+  classId,
+  className,
+  onBack,
+  onSelectAssignment,
+}) {
+  const [assignments, setAssignments] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-    // Fetch assignments for the selected class
-    useEffect(() => {
-        const fetchAssignments = async () => {
-            setLoading(true);
-            setError(null);
-            try {
-                const token = localStorage.getItem('token');
-                // Use the route to fetch assignments for a specific class
-                const response = await fetch(`http://localhost:5000/api/assignments/class/${classId}`, {
-                    headers: { 'x-auth-token': token },
-                });
-                const data = await response.json();
+  const loadAssignments = async () => {
+    const data = await apiFetch(`/api/assignments/class/${classId}`);
+    setAssignments(data);
+    setLoading(false);
+  };
 
-                if (response.ok) {
-                    setAssignments(data);
-                } else {
-                    setError(data.msg || "Failed to fetch assignments.");
-                }
-            } catch (err) {
-                setError("Network error fetching assignments.");
-            } finally {
-                setLoading(false);
-            }
-        };
+  useEffect(() => {
+    loadAssignments();
+  }, [classId]);
 
-        if (classId) {
-            fetchAssignments();
-        }
-    }, [classId]);
-
-    const getSubmissionColor = (count) => {
-        if (count > 0) return "text-green-600 bg-green-100";
-        return "text-gray-600 bg-gray-200";
-    };
-
-    if (loading) return <p className="text-center py-8 text-indigo-500">Loading Assignments...</p>;
-    if (error) return <p className="text-center py-8 text-red-500 font-bold">{error}</p>;
-
-    return (
-        <div className="space-y-6">
-            <button 
-                onClick={onBack} 
-                className="bg-gray-300 hover:bg-gray-400 text-gray-800 py-2 px-4 rounded-md transition duration-150 font-semibold mb-4 shadow-sm"
-            >
-                &larr; Back to All Classes
-            </button>
-
-            <h2 className="text-3xl font-extrabold text-gray-800 border-b pb-3">
-                Assignments for: <span className="text-indigo-700">{className}</span>
-            </h2>
-
-            {assignments.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {assignments.map((assignment) => (
-                        <div key={assignment._id} className="bg-white p-6 rounded-xl shadow-lg border border-gray-200 flex flex-col justify-between">
-                            
-                            {/* Assignment Info */}
-                            <div>
-                                <h3 className="text-xl font-extrabold text-gray-900 mb-1 truncate">{assignment.title}</h3> 
-                                <p className="text-xs text-gray-500 mb-4">Due: {new Date(assignment.dueDate).toLocaleDateString()}</p>
-                            </div>
-
-                            {/* Action Button */}
-                            <button 
-                                onClick={() => onSelectAssignment(assignment._id)} 
-                                className="mt-4 w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg text-sm font-semibold transition duration-150 shadow-md"
-                            >
-                                View Plagiarism Report
-                            </button>
-                        </div>
-                    ))}
-                </div>
-            ) : (
-                <p className="text-gray-500 p-4 bg-yellow-100 rounded-lg">No assignments found for this class.</p>
-            )}
+  return (
+    <div className="max-w-5xl mx-auto">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <button
+            onClick={onBack}
+            className="text-indigo-600 text-sm hover:underline"
+          >
+            ← Back to Classes
+          </button>
+          <h2 className="text-3xl font-bold mt-2">{className}</h2>
         </div>
-    );
+      </div>
+
+      {/* 🔵 Post Assignment (CLASS-SCOPED) */}
+      <PostAssignmentForm
+        classId={classId}
+        onAssignmentPosted={loadAssignments}
+      />
+
+      {/* Assignment List */}
+      <div className="mt-10">
+        <h3 className="text-xl font-semibold mb-4">Assignments</h3>
+
+        {loading ? (
+          <p>Loading assignments...</p>
+        ) : assignments.length === 0 ? (
+          <p className="text-gray-600">No assignments posted yet.</p>
+        ) : (
+          <div className="space-y-4">
+            {assignments.map((a) => (
+              <div
+                key={a._id}
+                className="bg-white p-5 rounded-xl shadow border flex justify-between items-center"
+              >
+                <div>
+                  <h4 className="font-bold text-lg">{a.title}</h4>
+                  <p className="text-sm text-gray-500">
+                    Due: {new Date(a.dueDate).toLocaleDateString()}
+                  </p>
+
+                  {a.teacherFile && (
+                    <a
+                      href={a.teacherFile}
+                      download={a.teacherFileName}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-indigo-600 text-sm underline"
+                    >
+                      Download Assignment {a.teacherFileName}
+                    </a>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => onSelectAssignment(a._id)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md"
+                >
+                  View Submissions
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default TeacherClassDetail;

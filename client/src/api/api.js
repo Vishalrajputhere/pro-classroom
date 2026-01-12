@@ -1,22 +1,47 @@
-const API_BASE = "http://localhost:5000";
+const API_BASE_URL = "http://localhost:5000";
 
-export const apiFetch = async (url, options = {}) => {
-    const token = localStorage.getItem("token");
+/**
+ * Universal API fetch helper
+ * - Automatically attaches JWT token
+ * - Works with JSON & FormData
+ * - NEVER auto-logs out
+ */
+export async function apiFetch(endpoint, options = {}) {
+  const token = localStorage.getItem("token");
 
-    const headers = {
-        ...(options.headers || {}),
-        "Content-Type": options.body instanceof FormData ? undefined : "application/json",
-        ...(token ? { "x-auth-token": token } : {})
-    };
+  const headers = options.headers ? { ...options.headers } : {};
 
-    const response = await fetch(`${API_BASE}${url}`, {
-        ...options,
-        headers
-    });
+  // ✅ Attach token ONLY if present
+  if (token) {
+    headers["x-auth-token"] = token;
+  }
 
-    const data = await response.json();
-    if (!response.ok) {
-        throw new Error(data.msg || "API Error");
-    }
-    return data;
-};
+  // ❗ Do NOT set Content-Type for FormData
+  if (!(options.body instanceof FormData)) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const config = {
+    ...options,
+    headers,
+  };
+
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+
+  // Try parsing JSON safely
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+
+  // ❌ NEVER auto logout here
+  if (!response.ok) {
+    const error = new Error(data?.msg || `Request failed (${response.status})`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return data;
+}
