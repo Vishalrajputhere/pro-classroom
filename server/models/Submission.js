@@ -1,30 +1,42 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
-const submissionSchema = new mongoose.Schema({
-    // Reference to the assignment this submission is for
+const submissionSchema = new mongoose.Schema(
+  {
+    // Reference to the assignment
     assignment: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Assignment',
-        required: true,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Assignment",
+      required: true,
     },
-    // Reference to the student who submitted the work
-    student: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true,
-    },
-    // The path where the file is stored on the server (or cloud)
-    filePath: {
-        type: String,
-        required: true,
-    },
-    // The similarity score (to be calculated later)
-    similarityScore: {
-        type: Number,
-        default: 0, 
-    }
-}, {
-    timestamps: true
-});
 
-module.exports = mongoose.model('Submission', submissionSchema);
+    // Reference to the student
+    student: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+
+    // Cloudinary file URL
+    filePath: {
+      type: String,
+      required: true,
+    },
+
+    // Final plagiarism percentage
+    similarityScore: {
+      type: Number,
+      default: 0,
+    },
+
+    // ✅ NEW: Detailed plagiarism explanation
+    explanation: {
+      type: Object,
+      default: null,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+module.exports = mongoose.model("Submission", submissionSchema);

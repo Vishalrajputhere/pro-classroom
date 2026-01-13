@@ -8,6 +8,8 @@ const { uploadBufferToCloudinary } = require("../utils/cloudinary");
 
 const Assignment = require("../models/Assignment");
 const Submission = require("../models/Submission");
+const { buildExplanation } = require("../utils/textProcessor");
+const { buildHumanReadableExplanation } = require("../utils/textProcessor");
 
 const {
   extractTextFromPDF,
@@ -77,7 +79,7 @@ router.post("/submit", auth, upload.single("file"), async (req, res) => {
       return res.status(400).json({ msg: "File and assignmentId required" });
     }
 
-    // ❌ Prevent duplicate submissions
+    // ❌ Prevent duplicate submission
     const alreadySubmitted = await Submission.findOne({
       assignment: assignmentId,
       student: req.user.id,
@@ -89,34 +91,50 @@ router.post("/submit", auth, upload.single("file"), async (req, res) => {
         .json({ msg: "You already submitted this assignment" });
     }
 
-    // ☁️ Upload student file
+    // ☁️ Upload student file to Cloudinary
     const uploadResult = await uploadBufferToCloudinary(
       req.file.buffer,
-      "assignments",
-      req.file.originalname
+      "submissions"
     );
 
     // 📄 Extract text from NEW submission
     const newText = await extractTextFromPDF(uploadResult.secure_url);
 
-    // 🔍 Compare with previous submissions
+    // 🔍 Fetch previous submissions FIRST (FIX)
     const previousSubs = await Submission.find({
       assignment: assignmentId,
     });
 
     let highestSimilarity = 0;
+    let explanation = null;
+    let mostSimilarText = null;
 
     for (const prev of previousSubs) {
       const prevText = await extractTextFromPDF(prev.filePath);
       const score = calculateCosineSimilarity(newText, prevText);
-      highestSimilarity = Math.max(highestSimilarity, score);
+
+      if (score > highestSimilarity) {
+        highestSimilarity = score;
+        mostSimilarText = prevText; // ✅ STORE TEXT
+      }
     }
 
+    // 🧠 Build explanation safely
+    if (mostSimilarText && highestSimilarity > 0) {
+      explanation = buildHumanReadableExplanation(
+        newText,
+        mostSimilarText,
+        highestSimilarity
+      );
+    }
+
+    // 💾 Save submission
     const submission = new Submission({
       assignment: assignmentId,
       student: req.user.id,
       filePath: uploadResult.secure_url,
       similarityScore: highestSimilarity,
+      explanation, // ✅ NOW SAVED
     });
 
     await submission.save();

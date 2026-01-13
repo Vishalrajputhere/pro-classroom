@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-function Auth() {
+function Auth({ onAuthSuccess }) {
   const [isLogin, setIsLogin] = useState(true);
 
   const [formData, setFormData] = useState({
@@ -13,6 +13,9 @@ function Auth() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
   const { username, email, password, role } = formData;
 
   const onChange = (e) => {
@@ -23,6 +26,7 @@ function Auth() {
     e.preventDefault();
     setError("");
     setSuccess("");
+    setLoading(true);
 
     const endpoint = isLogin ? "/api/users/login" : "/api/users/register";
     const payload = isLogin
@@ -61,92 +65,165 @@ function Auth() {
           return;
         }
 
-        // ✅ NO RELOAD LOOP
-        window.location.href = "/";
+        // ✅ Tell App.jsx to refresh auth state (NO reload)
+        if (typeof onAuthSuccess === "function") {
+          onAuthSuccess();
+        }
+
+        setSuccess("Login successful ✅");
       }
 
       // ✅ REGISTER FLOW
       else {
         setSuccess("Registration successful. Please login.");
         setIsLogin(true);
+        setFormData({
+          username: "",
+          email: "",
+          password: "",
+          role: "student",
+        });
       }
     } catch (err) {
       console.error(err);
       setError("Network error. Server not reachable.");
+    } finally {
+      setLoading(false);
     }
   };
 
+  const inputClass =
+    "w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 transition bg-white";
+
   return (
-    <div className="max-w-md mx-auto bg-white p-8 rounded-xl shadow-lg mt-10">
-      <h2 className="text-2xl font-bold mb-6 text-center">
-        {isLogin ? "Login" : "Register"}
-      </h2>
+    <div className="min-h-[85vh] flex items-center justify-center px-4">
+      <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-lg border">
+        {/* Header */}
+        <div className="text-center mb-6">
+          <h2 className="text-3xl font-extrabold text-gray-900">
+            {isLogin ? "Welcome Back 👋" : "Create Your Account ✨"}
+          </h2>
+          <p className="text-sm text-gray-500 mt-2">
+            {isLogin
+              ? "Login to continue to your classroom dashboard."
+              : "Register as a student or teacher to get started."}
+          </p>
+        </div>
 
-      {error && <p className="text-red-600 mb-3">{error}</p>}
-      {success && <p className="text-green-600 mb-3">{success}</p>}
-
-      <form onSubmit={onSubmit} className="space-y-4">
-        {!isLogin && (
-          <input
-            name="username"
-            placeholder="Username"
-            value={username}
-            onChange={onChange}
-            required
-            className="w-full p-2 border rounded"
-          />
+        {/* Alerts */}
+        {error && (
+          <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
+            ❌ {error}
+          </div>
         )}
 
-        <input
-          name="email"
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={onChange}
-          required
-          className="w-full p-2 border rounded"
-        />
+        {success && (
+          <div className="mb-4 p-3 rounded-xl bg-green-50 border border-green-200 text-green-700 text-sm font-medium">
+            ✅ {success}
+          </div>
+        )}
 
-        <input
-          name="password"
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={onChange}
-          required
-          className="w-full p-2 border rounded"
-        />
+        {/* Form */}
+        <form onSubmit={onSubmit} className="space-y-4">
+          {!isLogin && (
+            <div>
+              <label className="text-sm font-semibold text-gray-700">
+                Username
+              </label>
+              <input
+                name="username"
+                placeholder="Enter username"
+                value={username}
+                onChange={onChange}
+                required
+                className={inputClass}
+              />
+            </div>
+          )}
 
-        {!isLogin && (
-          <select
-            name="role"
-            value={role}
-            onChange={onChange}
-            className="w-full p-2 border rounded"
+          <div>
+            <label className="text-sm font-semibold text-gray-700">Email</label>
+            <input
+              name="email"
+              type="email"
+              placeholder="Enter email"
+              value={email}
+              onChange={onChange}
+              required
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-semibold text-gray-700">
+              Password
+            </label>
+
+            <div className="relative">
+              <input
+                name="password"
+                type={showPassword ? "text" : "password"}
+                placeholder="Enter password"
+                value={password}
+                onChange={onChange}
+                required
+                className={`${inputClass} pr-12`}
+              />
+
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-indigo-600 hover:underline"
+              >
+                {showPassword ? "HIDE" : "SHOW"}
+              </button>
+            </div>
+          </div>
+
+          {!isLogin && (
+            <div>
+              <label className="text-sm font-semibold text-gray-700">
+                Select Role
+              </label>
+              <select
+                name="role"
+                value={role}
+                onChange={onChange}
+                className={inputClass}
+              >
+                <option value="student">Student</option>
+                <option value="teacher">Teacher</option>
+              </select>
+
+              <p className="text-xs text-gray-500 mt-2">
+                Teacher can post assignments, student can submit.
+              </p>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold transition"
           >
-            <option value="student">Student</option>
-            <option value="teacher">Teacher</option>
-          </select>
-        )}
+            {loading ? "Please wait..." : isLogin ? "Login" : "Register"}
+          </button>
+        </form>
 
-        <button
-          type="submit"
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded"
-        >
-          {isLogin ? "Login" : "Register"}
-        </button>
-      </form>
-
-      <p
-        onClick={() => {
-          setIsLogin(!isLogin);
-          setError("");
-          setSuccess("");
-        }}
-        className="text-center mt-4 text-indigo-600 cursor-pointer"
-      >
-        {isLogin ? "Create account" : "Already have an account?"}
-      </p>
+        {/* Toggle */}
+        <div className="text-center mt-6">
+          <button
+            onClick={() => {
+              setIsLogin(!isLogin);
+              setError("");
+              setSuccess("");
+            }}
+            className="text-indigo-600 font-semibold hover:underline"
+          >
+            {isLogin ? "Create account" : "Already have an account?"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
