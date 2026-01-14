@@ -8,12 +8,11 @@ const { uploadBufferToCloudinary } = require("../utils/cloudinary");
 
 const Assignment = require("../models/Assignment");
 const Submission = require("../models/Submission");
-const { buildExplanation } = require("../utils/textProcessor");
-const { buildHumanReadableExplanation } = require("../utils/textProcessor");
 
 const {
   extractTextFromPDF,
   calculateCosineSimilarity,
+  buildHumanReadableExplanation,
 } = require("../utils/textProcessor");
 
 /* =====================================================
@@ -28,7 +27,7 @@ router.post("/post", auth, upload.single("teacherFile"), async (req, res) => {
       return res.status(400).json({ msg: "Missing fields" });
     }
 
-    // ---------- CASE 1: NO FILE ----------
+    // CASE 1: NO FILE
     if (!req.file) {
       const assignment = new Assignment({
         title,
@@ -42,7 +41,7 @@ router.post("/post", auth, upload.single("teacherFile"), async (req, res) => {
       return res.json(assignment);
     }
 
-    // ---------- CASE 2: FILE EXISTS ----------
+    // CASE 2: FILE EXISTS
     const uploadResult = await uploadBufferToCloudinary(
       req.file.buffer,
       "assignments",
@@ -55,7 +54,7 @@ router.post("/post", auth, upload.single("teacherFile"), async (req, res) => {
       dueDate,
       class: classId,
       teacher: req.user.id,
-      teacherFile: uploadResult.secure_url, // ✅ valid Cloudinary URL
+      teacherFile: uploadResult.secure_url,
       teacherFileName: req.file.originalname,
     });
 
@@ -79,7 +78,7 @@ router.post("/submit", auth, upload.single("file"), async (req, res) => {
       return res.status(400).json({ msg: "File and assignmentId required" });
     }
 
-    // ❌ Prevent duplicate submission
+    // Prevent duplicate submission
     const alreadySubmitted = await Submission.findOne({
       assignment: assignmentId,
       student: req.user.id,
@@ -91,16 +90,17 @@ router.post("/submit", auth, upload.single("file"), async (req, res) => {
         .json({ msg: "You already submitted this assignment" });
     }
 
-    // ☁️ Upload student file to Cloudinary
+    // Upload student file to Cloudinary
     const uploadResult = await uploadBufferToCloudinary(
       req.file.buffer,
-      "submissions"
+      "submissions",
+      req.file.originalname
     );
 
-    // 📄 Extract text from NEW submission
+    // Extract text from new submission
     const newText = await extractTextFromPDF(uploadResult.secure_url);
 
-    // 🔍 Fetch previous submissions FIRST (FIX)
+    // Fetch previous submissions
     const previousSubs = await Submission.find({
       assignment: assignmentId,
     });
@@ -108,6 +108,7 @@ router.post("/submit", auth, upload.single("file"), async (req, res) => {
     let highestSimilarity = 0;
     let explanation = null;
     let mostSimilarText = null;
+    let matchedSubmissionId = null;
 
     for (const prev of previousSubs) {
       const prevText = await extractTextFromPDF(prev.filePath);
@@ -115,26 +116,30 @@ router.post("/submit", auth, upload.single("file"), async (req, res) => {
 
       if (score > highestSimilarity) {
         highestSimilarity = score;
-        mostSimilarText = prevText; // ✅ STORE TEXT
+        mostSimilarText = prevText;
+        matchedSubmissionId = prev._id;
       }
     }
 
-    // 🧠 Build explanation safely
+    // Build explanation
     if (mostSimilarText && highestSimilarity > 0) {
       explanation = buildHumanReadableExplanation(
         newText,
         mostSimilarText,
         highestSimilarity
       );
+
+      // attach matched submission id (helpful for teacher)
+      explanation.matchedSubmissionId = matchedSubmissionId;
     }
 
-    // 💾 Save submission
+    // Save submission
     const submission = new Submission({
       assignment: assignmentId,
       student: req.user.id,
       filePath: uploadResult.secure_url,
       similarityScore: highestSimilarity,
-      explanation, // ✅ NOW SAVED
+      explanation,
     });
 
     await submission.save();
@@ -163,23 +168,6 @@ router.get("/class/:classId", auth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: "Failed to fetch assignments" });
-  }
-});
-
-/* =====================================================
-   TEACHER: VIEW SUBMISSIONS
-   GET /api/assignments/submissions/:assignmentId
-===================================================== */
-router.get("/submissions/:assignmentId", auth, async (req, res) => {
-  try {
-    const submissions = await Submission.find({
-      assignment: req.params.assignmentId,
-    }).populate("student", "username email");
-
-    res.json(submissions);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ msg: "Failed to fetch submissions" });
   }
 });
 

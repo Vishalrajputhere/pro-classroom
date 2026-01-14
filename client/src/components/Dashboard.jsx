@@ -20,7 +20,18 @@ function Dashboard() {
 
   const [refreshTrigger, setRefreshTrigger] = useState(false);
 
-  // 🔐 Load logged-in user (SAFE — no auto logout)
+  // 🔥 Teacher summary states
+  const [teacherSummaryLoading, setTeacherSummaryLoading] = useState(false);
+  const [teacherSummary, setTeacherSummary] = useState({
+    totalAssignments: 0,
+    totalSubmissions: 0,
+    safe: 0,
+    moderate: 0,
+    high: 0,
+    topSuspicious: [], // will contain enriched items
+  });
+
+  // 🔐 Load logged-in user
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -29,14 +40,13 @@ function Dashboard() {
 
         if (userData.role === "teacher") {
           const classes = await apiFetch("/api/classes/teacher");
-          setTeacherClasses(classes);
+          setTeacherClasses(classes || []);
         } else {
           const classes = await apiFetch("/api/classes/student");
-          setStudentClasses(classes);
+          setStudentClasses(classes || []);
         }
       } catch (err) {
         console.error("Dashboard load failed:", err);
-        // ❌ DO NOT REMOVE TOKEN
         setUser(null);
       } finally {
         setLoading(false);
@@ -45,6 +55,97 @@ function Dashboard() {
 
     loadData();
   }, [refreshTrigger]);
+
+  // ✅ Teacher summary fetch (Assignments + Submissions across all classes)
+  useEffect(() => {
+    const loadTeacherSummary = async () => {
+      if (!user || user.role !== "teacher") return;
+
+      if (!teacherClasses || teacherClasses.length === 0) {
+        setTeacherSummary({
+          totalAssignments: 0,
+          totalSubmissions: 0,
+          safe: 0,
+          moderate: 0,
+          high: 0,
+          topSuspicious: [],
+        });
+        return;
+      }
+
+      // Only load summary on main teacher dashboard screen
+      if (selectedClass || selectedAssignmentId) return;
+
+      try {
+        setTeacherSummaryLoading(true);
+
+        // 1) Fetch all assignments for all classes
+        const assignmentsByClass = await Promise.all(
+          teacherClasses.map((cls) =>
+            apiFetch(`/api/assignments/class/${cls._id}`).catch(() => [])
+          )
+        );
+
+        const allAssignments = assignmentsByClass.flat().filter(Boolean);
+
+        // Build assignmentId -> assignmentTitle map
+        const assignmentTitleMap = {};
+        for (const a of allAssignments) {
+          assignmentTitleMap[a._id] = a.title || "Untitled Assignment";
+        }
+
+        // 2) Fetch submissions for each assignment
+        const submissionsByAssignment = await Promise.all(
+          allAssignments.map((a) =>
+            apiFetch(`/api/submissions/assignment/${a._id}`).catch(() => [])
+          )
+        );
+
+        const allSubmissions = submissionsByAssignment.flat().filter(Boolean);
+
+        // 3) Count risk buckets
+        let safe = 0,
+          moderate = 0,
+          high = 0;
+
+        for (const s of allSubmissions) {
+          const score = Number(s.similarityScore || 0);
+          if (score < 20) safe++;
+          else if (score < 50) moderate++;
+          else high++;
+        }
+
+        // 4) Top suspicious (highest similarity)
+        const topSuspiciousRaw = [...allSubmissions]
+          .sort(
+            (a, b) =>
+              Number(b.similarityScore || 0) - Number(a.similarityScore || 0)
+          )
+          .slice(0, 3);
+
+        // Enrich top suspicious with assignment title
+        const topSuspicious = topSuspiciousRaw.map((s) => ({
+          ...s,
+          assignmentTitle: assignmentTitleMap[s.assignment] || "Unknown Assignment",
+        }));
+
+        setTeacherSummary({
+          totalAssignments: allAssignments.length,
+          totalSubmissions: allSubmissions.length,
+          safe,
+          moderate,
+          high,
+          topSuspicious,
+        });
+      } catch (err) {
+        console.error("Teacher summary load failed:", err);
+      } finally {
+        setTeacherSummaryLoading(false);
+      }
+    };
+
+    loadTeacherSummary();
+  }, [user, teacherClasses, selectedClass, selectedAssignmentId]);
 
   if (loading) {
     return (
@@ -102,6 +203,143 @@ function Dashboard() {
           {/* Teacher main */}
           {!selectedClass && !selectedAssignmentId && (
             <>
+              {/* ✅ Teacher Summary */}
+              <div className="bg-white border rounded-2xl shadow-sm p-6 mb-8">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">
+                      Teacher Summary 📊
+                    </h2>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Overview of assignments & plagiarism risk across all
+                      classes.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => setRefreshTrigger(!refreshTrigger)}
+                    className="text-sm font-semibold text-indigo-700 hover:underline"
+                  >
+                    Refresh
+                  </button>
+                </div>
+
+                {teacherSummaryLoading ? (
+                  <div className="mt-5 space-y-3">
+                    <Skeleton height={60} />
+                    <Skeleton height={60} />
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6">
+                      <div className="bg-gray-50 border rounded-xl p-4">
+                        <p className="text-xs text-gray-500">Classes</p>
+                        <p className="text-2xl font-extrabold text-gray-900">
+                          {classCount}
+                        </p>
+                      </div>
+
+                      <div className="bg-gray-50 border rounded-xl p-4">
+                        <p className="text-xs text-gray-500">Assignments</p>
+                        <p className="text-2xl font-extrabold text-gray-900">
+                          {teacherSummary.totalAssignments}
+                        </p>
+                      </div>
+
+                      <div className="bg-gray-50 border rounded-xl p-4">
+                        <p className="text-xs text-gray-500">Submissions</p>
+                        <p className="text-2xl font-extrabold text-gray-900">
+                          {teacherSummary.totalSubmissions}
+                        </p>
+                      </div>
+
+                      <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                        <p className="text-xs text-green-700">Safe (&lt;20%)</p>
+                        <p className="text-2xl font-extrabold text-green-800">
+                          {teacherSummary.safe}
+                        </p>
+                      </div>
+
+                      <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                        <p className="text-xs text-red-700">High Risk (50%+)</p>
+                        <p className="text-2xl font-extrabold text-red-800">
+                          {teacherSummary.high}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Moderate + Top Suspicious */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-6">
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-5">
+                        <p className="text-sm font-bold text-yellow-800">
+                          Moderate Risk (20–49%)
+                        </p>
+                        <p className="text-3xl font-extrabold text-yellow-900 mt-2">
+                          {teacherSummary.moderate}
+                        </p>
+                        <p className="text-xs text-yellow-700 mt-1">
+                          These need a quick review but may not be plagiarism.
+                        </p>
+                      </div>
+
+                      <div className="bg-white border rounded-xl p-5">
+                        <p className="text-sm font-bold text-gray-900">
+                          Top Suspicious Submissions 🚨
+                        </p>
+
+                        {teacherSummary.topSuspicious.length === 0 ? (
+                          <p className="text-sm text-gray-500 mt-3">
+                            No submissions yet.
+                          </p>
+                        ) : (
+                          <div className="mt-4 space-y-3">
+                            {teacherSummary.topSuspicious.map((s) => {
+                              const score = Number(s.similarityScore || 0);
+
+                              return (
+                                <div
+                                  key={s._id}
+                                  className="flex items-center justify-between bg-gray-50 border rounded-lg p-3 gap-3"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-bold text-gray-900 truncate">
+                                      {s.student?.username || "Unknown Student"}
+                                    </p>
+
+                                    <p className="text-xs text-gray-500 truncate mt-0.5">
+                                      Assignment:{" "}
+                                      <span className="font-semibold text-gray-700">
+                                        {s.assignmentTitle}
+                                      </span>
+                                    </p>
+                                  </div>
+
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-sm font-extrabold text-red-700">
+                                      {score}%
+                                    </span>
+
+                                    <button
+                                      onClick={() =>
+                                        setSelectedAssignmentId(s.assignment)
+                                      }
+                                      className="text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg transition"
+                                    >
+                                      Open Report
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Create Class */}
               <div className="bg-white border rounded-2xl shadow-sm p-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-2">
                   Create a Class
@@ -115,6 +353,7 @@ function Dashboard() {
                 />
               </div>
 
+              {/* Your Classes */}
               <div className="mt-10">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-2xl font-bold text-gray-900">

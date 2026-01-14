@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../api/api";
 
 function formatFileSize(bytes) {
@@ -6,6 +6,14 @@ function formatFileSize(bytes) {
   const kb = bytes / 1024;
   if (kb < 1024) return `${kb.toFixed(1)} KB`;
   return `${(kb / 1024).toFixed(1)} MB`;
+}
+
+function getTodayDateInputValue() {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function PostAssignmentForm({ classId, onAssignmentPosted }) {
@@ -17,6 +25,12 @@ function PostAssignmentForm({ classId, onAssignmentPosted }) {
   const [status, setStatus] = useState("");
   const [isPosting, setIsPosting] = useState(false);
 
+  const minDate = useMemo(() => getTodayDateInputValue(), []);
+
+  // 🔒 Basic limits (safe defaults)
+  const MAX_FILE_MB = 10;
+  const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
+
   const fileMeta = useMemo(() => {
     if (!teacherFile) return null;
     return {
@@ -26,10 +40,73 @@ function PostAssignmentForm({ classId, onAssignmentPosted }) {
     };
   }, [teacherFile]);
 
+  // Auto-clear success message after 3 seconds
+  useEffect(() => {
+    if (!status.includes("✅")) return;
+    const t = setTimeout(() => setStatus(""), 3000);
+    return () => clearTimeout(t);
+  }, [status]);
+
+  const statusStyle = useMemo(() => {
+    if (!status) return "";
+    if (status.includes("❌")) return "bg-red-50 border-red-200 text-red-700";
+    if (status.includes("✅"))
+      return "bg-green-50 border-green-200 text-green-700";
+    return "bg-gray-50 border-gray-200 text-gray-700";
+  }, [status]);
+
+  const canSubmit = useMemo(() => {
+    return (
+      title.trim().length > 0 &&
+      description.trim().length > 0 &&
+      dueDate.trim().length > 0 &&
+      !isPosting
+    );
+  }, [title, description, dueDate, isPosting]);
+
+  const validateFile = (file) => {
+    if (!file) return { ok: true };
+
+    const name = (file.name || "").toLowerCase();
+    const isPdf = name.endsWith(".pdf") || file.type === "application/pdf";
+    const isTxt = name.endsWith(".txt") || file.type === "text/plain";
+
+    if (!isPdf && !isTxt) {
+      return { ok: false, msg: "❌ Only PDF or TXT files are allowed." };
+    }
+
+    if (file.size > MAX_FILE_BYTES) {
+      return {
+        ok: false,
+        msg: `❌ File too large. Max allowed is ${MAX_FILE_MB}MB.`,
+      };
+    }
+
+    return { ok: true };
+  };
+
   const onSubmit = async (e) => {
     e.preventDefault();
 
     if (isPosting) return;
+
+    // 🔍 Validation
+    if (!title.trim() || !description.trim() || !dueDate.trim()) {
+      setStatus("❌ Please fill all required fields.");
+      return;
+    }
+
+    // prevent past date
+    if (dueDate < minDate) {
+      setStatus("❌ Due date cannot be in the past.");
+      return;
+    }
+
+    const fileCheck = validateFile(teacherFile);
+    if (!fileCheck.ok) {
+      setStatus(fileCheck.msg);
+      return;
+    }
 
     setIsPosting(true);
     setStatus("Posting...");
@@ -65,9 +142,6 @@ function PostAssignmentForm({ classId, onAssignmentPosted }) {
       setIsPosting(false);
     }
   };
-
-  const statusColor =
-    status.includes("❌") ? "text-red-600" : status.includes("✅") ? "text-green-700" : "text-gray-700";
 
   return (
     <div className="bg-yellow-50 border border-yellow-200 p-6 rounded-2xl shadow-sm">
@@ -118,16 +192,33 @@ function PostAssignmentForm({ classId, onAssignmentPosted }) {
 
         {/* Due Date */}
         <div>
-          <label className="text-sm font-semibold text-gray-700">
-            Due Date <span className="text-red-500">*</span>
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-semibold text-gray-700">
+              Due Date <span className="text-red-500">*</span>
+            </label>
+
+            <button
+              type="button"
+              onClick={() => setDueDate(minDate)}
+              className="text-xs font-semibold text-indigo-700 hover:underline"
+            >
+              Set Today
+            </button>
+          </div>
+
           <input
             type="date"
             value={dueDate}
+            min={minDate}
             onChange={(e) => setDueDate(e.target.value)}
             className="w-full mt-1 border border-gray-300 bg-white p-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-200"
             required
           />
+
+          <p className="text-xs text-gray-500 mt-1">
+            Minimum allowed date:{" "}
+            <span className="font-semibold">{minDate}</span>
+          </p>
         </div>
 
         {/* File Upload */}
@@ -140,7 +231,19 @@ function PostAssignmentForm({ classId, onAssignmentPosted }) {
             <input
               type="file"
               accept=".pdf,.txt"
-              onChange={(e) => setTeacherFile(e.target.files?.[0] || null)}
+              onChange={(e) => {
+                const selected = e.target.files?.[0] || null;
+                const check = validateFile(selected);
+
+                if (!check.ok) {
+                  setTeacherFile(null);
+                  setStatus(check.msg);
+                  return;
+                }
+
+                setTeacherFile(selected);
+                setStatus("");
+              }}
               className="w-full text-sm"
             />
 
@@ -151,8 +254,8 @@ function PostAssignmentForm({ classId, onAssignmentPosted }) {
                     📎 {fileMeta.name}
                   </p>
                   <p className="text-xs text-gray-600 mt-1">
-                    Type: <span className="font-medium">{fileMeta.type}</span>{" "}
-                    • Size: <span className="font-medium">{fileMeta.size}</span>
+                    Type: <span className="font-medium">{fileMeta.type}</span> •
+                    Size: <span className="font-medium">{fileMeta.size}</span>
                   </p>
                 </div>
 
@@ -168,16 +271,16 @@ function PostAssignmentForm({ classId, onAssignmentPosted }) {
           </div>
 
           <p className="text-xs text-gray-500 mt-2">
-            Supported: PDF, TXT (recommended PDF).
+            Supported: PDF, TXT (recommended PDF). Max size: {MAX_FILE_MB}MB.
           </p>
         </div>
 
         {/* Submit */}
         <button
-          disabled={isPosting}
+          disabled={!canSubmit}
           className={`w-full px-4 py-2.5 rounded-xl font-semibold shadow-sm transition ${
-            isPosting
-              ? "bg-indigo-400 text-white cursor-not-allowed"
+            !canSubmit
+              ? "bg-indigo-300 text-white cursor-not-allowed"
               : "bg-indigo-600 hover:bg-indigo-700 text-white"
           }`}
         >
@@ -185,8 +288,13 @@ function PostAssignmentForm({ classId, onAssignmentPosted }) {
         </button>
       </form>
 
+      {/* Status */}
       {status && (
-        <p className={`mt-4 text-sm font-medium ${statusColor}`}>{status}</p>
+        <div
+          className={`mt-4 text-sm font-semibold border rounded-xl p-3 ${statusStyle}`}
+        >
+          {status}
+        </div>
       )}
     </div>
   );

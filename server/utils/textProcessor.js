@@ -169,80 +169,84 @@ module.exports = {
 };
 
 /* ===========================
-   EXPLANATION ENGINE
+   KEYWORD + PHRASE MATCHING
 =========================== */
-function getTopMatchingPhrases(textA, textB, limit = 5) {
-  const tokensA = textA.split(" ");
-  const tokensB = new Set(textB.split(" "));
 
-  const matches = [];
+// Extract important keywords
+function getMatchedKeywords(textA, textB, limit = 10) {
+  const wordsA = textA.split(" ");
+  const wordsB = new Set(textB.split(" "));
 
-  for (let i = 0; i < tokensA.length - 4; i++) {
-    const phrase = tokensA.slice(i, i + 5).join(" ");
-    const words = phrase.split(" ");
+  const freq = {};
 
-    const common = words.filter((w) => tokensB.has(w));
-    if (common.length >= 4) {
-      matches.push(phrase);
+  for (const word of wordsA) {
+    if (wordsB.has(word)) {
+      freq[word] = (freq[word] || 0) + 1;
     }
   }
 
-  return [...new Set(matches)].slice(0, limit);
+  return Object.entries(freq)
+    .sort((a, b) => b[1] - a[1])
+    .map(([word]) => word)
+    .slice(0, limit);
 }
 
-function buildExplanation(textA, textB, similarityScore) {
-  return {
-    score: similarityScore,
-    confidence:
-      similarityScore < 20 ? "LOW" : similarityScore < 50 ? "MEDIUM" : "HIGH",
-    topMatches: getTopMatchingPhrases(textA, textB),
-    note:
-      similarityScore < 20
-        ? "Mostly original content"
-        : similarityScore < 50
-        ? "Partial similarity detected"
-        : "High similarity detected",
-  };
+// Extract matching phrases (n-grams)
+function getMatchedPhrases(textA, textB, n = 4, limit = 5) {
+  const tokensA = textA.split(" ");
+  const textBString = textB;
+
+  const phrases = new Set();
+
+  for (let i = 0; i <= tokensA.length - n; i++) {
+    const phrase = tokensA.slice(i, i + n).join(" ");
+
+    // phrase must mostly exist in other text
+    let matchCount = 0;
+    phrase.split(" ").forEach((w) => {
+      if (textBString.includes(w)) matchCount++;
+    });
+
+    if (matchCount >= n - 1) {
+      phrases.add(phrase);
+    }
+  }
+
+  return [...phrases].slice(0, limit);
 }
 
-module.exports.buildExplanation = buildExplanation;
-
+/* ===========================
+   HUMAN READABLE EXPLANATION
+=========================== */
 function buildHumanReadableExplanation(newText, oldText, similarityScore) {
-  const normalize = (text) =>
-    text
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, "")
-      .split(/\s+/);
+  const matchedKeywords = getMatchedKeywords(newText, oldText);
+  const matchedPhrases = getMatchedPhrases(newText, oldText);
 
-  const newWords = normalize(newText);
-  const oldWords = normalize(oldText);
-
-  const commonWords = newWords.filter((word) => oldWords.includes(word));
-  const uniqueCommonWords = [...new Set(commonWords)];
-
-  let reason = "";
+  let explanationText = "";
 
   if (similarityScore < 20) {
-    reason =
-      "Minor overlap detected. Similarity is likely due to common terminology or formatting.";
+    explanationText =
+      "Minor overlap detected. Similarity appears to be caused by common academic terminology.";
   } else if (similarityScore < 50) {
-    reason =
-      "Moderate similarity detected. Some sentences and phrasing patterns overlap with another submission.";
+    explanationText =
+      "Moderate similarity detected. Several phrases and keywords overlap with another submission.";
   } else {
-    reason =
-      "High similarity detected. Large portions of text structure and wording closely match another submission.";
+    explanationText =
+      "High similarity detected. Multiple phrases and sentence structures closely match another submission.";
   }
 
   return {
     similarityScore,
-    commonWordCount: uniqueCommonWords.length,
-    explanationText: reason,
-    note: "Similarity is calculated using semantic vector comparison, not exact word matching.",
+    explanationText,
+    commonWordCount: matchedKeywords.length,
+    matchedKeywords, // ✅ NEW
+    matchedPhrases, // ✅ NEW
+    note: "Matched phrases are extracted using phrase-level comparison (not exact copy-paste).",
   };
 }
 
 module.exports = {
   extractTextFromPDF,
   calculateCosineSimilarity,
-  buildHumanReadableExplanation, // ✅ export
+  buildHumanReadableExplanation,
 };
