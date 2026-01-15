@@ -21,14 +21,17 @@ function CreateClassForm({ onClassCreated }) {
         return;
       }
 
-      const response = await fetch("http://localhost:5000/api/classes/create", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-auth-token": token,
-        },
-        body: JSON.stringify({ name: className }),
-      });
+      const response = await fetch(
+        "https://pro-classroom.onrender.com/api/classes/create",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-auth-token": token,
+          },
+          body: JSON.stringify({ name: className }),
+        }
+      );
 
       const data = await response.json();
 
