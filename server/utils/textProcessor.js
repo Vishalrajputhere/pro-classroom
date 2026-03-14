@@ -6,59 +6,9 @@ const axios = require("axios");
    CONFIG: GENERIC STOP WORDS
 =========================== */
 const STOP_WORDS = new Set([
-  "the",
-  "is",
-  "are",
-  "was",
-  "were",
-  "be",
-  "been",
-  "being",
-  "a",
-  "an",
-  "and",
-  "or",
-  "but",
-  "if",
-  "then",
-  "else",
-  "of",
-  "to",
-  "in",
-  "on",
-  "for",
-  "with",
-  "as",
-  "by",
-  "at",
-  "this",
-  "that",
-  "these",
-  "those",
-  "it",
-  "its",
-  "from",
-  "we",
-  "you",
-  "they",
-  "their",
-  "can",
-  "could",
-  "should",
-  "would",
-  "may",
-  "might",
-  "will",
-  "shall",
-  "do",
-  "does",
-  "did",
-  "done",
+  "the", "is", "are", "was", "were", "be", "been", "being", "a", "an", "and", "or", "but", "if", "then", "else", "of", "to", "in", "on", "for", "with", "as", "by", "at", "this", "that", "these", "those", "it", "its", "from", "we", "you", "they", "their", "can", "could", "should", "would", "may", "might", "will", "shall", "do", "does", "did", "done"
 ]);
 
-/* ===========================
-   REMOVE COMMON DOCUMENT NOISE
-=========================== */
 const NOISE_PATTERNS = [
   /^page\s+\d+/gi,
   /^chapter\s+\d+/gi,
@@ -67,7 +17,7 @@ const NOISE_PATTERNS = [
 ];
 
 /* ===========================
-   TEXT NORMALIZATION (CRITICAL)
+   TEXT NORMALIZATION
 =========================== */
 function normalizeText(text) {
   if (!text) return "";
@@ -78,19 +28,15 @@ function normalizeText(text) {
     .replace(/\s+/g, " ")
     .trim();
 
-  // Remove noise patterns
   NOISE_PATTERNS.forEach((pattern) => {
     cleaned = cleaned.replace(pattern, "");
   });
 
-  // Token filtering
   const tokens = cleaned.split(" ").filter(
-    (word) =>
-      word.length > 2 && // remove tiny words
-      !STOP_WORDS.has(word) // remove stop words
+    (word) => word.length > 2 && !STOP_WORDS.has(word)
   );
 
-  return tokens.join(" ");
+  return { raw: text, cleaned: tokens.join(" "), tokens };
 }
 
 /* ===========================
@@ -99,25 +45,18 @@ function normalizeText(text) {
 async function extractTextFromPDF(source) {
   try {
     let buffer;
-
-    // Cloudinary URL
     if (source.startsWith("http")) {
-      const response = await axios.get(source, {
-        responseType: "arraybuffer",
-      });
+      const response = await axios.get(source, { responseType: "arraybuffer" });
       buffer = response.data;
     } else {
       buffer = fs.readFileSync(source);
     }
-
     const data = await pdfParse(buffer);
-    return normalizeText(data.text || "");
+    return data.text || "";
   } catch (err) {
     console.warn("PDF parse failed, trying TXT fallback...");
-
     try {
-      const raw = fs.readFileSync(source, "utf8");
-      return normalizeText(raw);
+      return fs.readFileSync(source, "utf8");
     } catch (e) {
       console.error("Text extraction failed:", e.message);
       return "";
@@ -126,127 +65,82 @@ async function extractTextFromPDF(source) {
 }
 
 /* ===========================
-   COSINE SIMILARITY
+   TF-IDF + COSINE SIMILARITY
 =========================== */
-function calculateCosineSimilarity(textA, textB) {
-  if (!textA || !textB) return 0;
+function calculateTFIDFSimilarity(textA, textB) {
+  const normA = normalizeText(textA);
+  const normB = normalizeText(textB);
 
-  const wordsA = textA.split(" ");
-  const wordsB = textB.split(" ");
+  if (!normA.cleaned || !normB.cleaned) return 0;
 
+  const wordsA = normA.tokens;
+  const wordsB = normB.tokens;
+
+  // Simple Term Frequency (TF)
   const freqA = {};
   const freqB = {};
-
   wordsA.forEach((w) => (freqA[w] = (freqA[w] || 0) + 1));
   wordsB.forEach((w) => (freqB[w] = (freqB[w] || 0) + 1));
 
   const uniqueWords = new Set([...Object.keys(freqA), ...Object.keys(freqB)]);
+  const N = 2; // Total documents
 
   let dot = 0;
   let magA = 0;
   let magB = 0;
 
   uniqueWords.forEach((word) => {
-    const a = freqA[word] || 0;
-    const b = freqB[word] || 0;
+    // Document Frequency (DF)
+    let df = 0;
+    if (freqA[word]) df++;
+    if (freqB[word]) df++;
 
-    dot += a * b;
-    magA += a * a;
-    magB += b * b;
+    // Inverse Document Frequency (IDF)
+    const idf = Math.log(N / df) + 1; // standard smooth idf
+
+    const tfidfA = (freqA[word] || 0) * idf;
+    const tfidfB = (freqB[word] || 0) * idf;
+
+    dot += tfidfA * tfidfB;
+    magA += tfidfA * tfidfA;
+    magB += tfidfB * tfidfB;
   });
 
   if (magA === 0 || magB === 0) return 0;
-
   const similarity = dot / (Math.sqrt(magA) * Math.sqrt(magB));
-
-  // Convert to percentage (rounded)
   return Math.round(similarity * 100);
 }
 
-module.exports = {
-  extractTextFromPDF,
-  calculateCosineSimilarity,
-};
-
 /* ===========================
-   KEYWORD + PHRASE MATCHING
+   N-GRAM EXACT MATCH HIGHLIGHTING
 =========================== */
-
-// Extract important keywords
-function getMatchedKeywords(textA, textB, limit = 10) {
-  const wordsA = textA.split(" ");
-  const wordsB = new Set(textB.split(" "));
-
-  const freq = {};
-
-  for (const word of wordsA) {
-    if (wordsB.has(word)) {
-      freq[word] = (freq[word] || 0) + 1;
-    }
+function extractNGrams(text, n) {
+  // Use raw split to maintain phrase structure but lowercase to normalize match
+  const words = text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim().split(" ");
+  const ngrams = [];
+  for (let i = 0; i <= words.length - n; i++) {
+    ngrams.push(words.slice(i, i + n).join(" "));
   }
-
-  return Object.entries(freq)
-    .sort((a, b) => b[1] - a[1])
-    .map(([word]) => word)
-    .slice(0, limit);
+  return ngrams;
 }
 
-// Extract matching phrases (n-grams)
-function getMatchedPhrases(textA, textB, n = 4, limit = 5) {
-  const tokensA = textA.split(" ");
-  const textBString = textB;
+function getMatchedPhrases(textA, textB, n = 5, limit = 5) {
+  const ngramsA = extractNGrams(textA, n);
+  const ngramsB = new Set(extractNGrams(textB, n));
 
-  const phrases = new Set();
-
-  for (let i = 0; i <= tokensA.length - n; i++) {
-    const phrase = tokensA.slice(i, i + n).join(" ");
-
-    // phrase must mostly exist in other text
-    let matchCount = 0;
-    phrase.split(" ").forEach((w) => {
-      if (textBString.includes(w)) matchCount++;
-    });
-
-    if (matchCount >= n - 1) {
-      phrases.add(phrase);
+  const matches = new Set();
+  
+  ngramsA.forEach(phrase => {
+    if (ngramsB.has(phrase)) {
+      matches.add(phrase);
     }
-  }
+  });
 
-  return [...phrases].slice(0, limit);
-}
-
-/* ===========================
-   HUMAN READABLE EXPLANATION
-=========================== */
-function buildHumanReadableExplanation(newText, oldText, similarityScore) {
-  const matchedKeywords = getMatchedKeywords(newText, oldText);
-  const matchedPhrases = getMatchedPhrases(newText, oldText);
-
-  let explanationText = "";
-
-  if (similarityScore < 20) {
-    explanationText =
-      "Minor overlap detected. Similarity appears to be caused by common academic terminology.";
-  } else if (similarityScore < 50) {
-    explanationText =
-      "Moderate similarity detected. Several phrases and keywords overlap with another submission.";
-  } else {
-    explanationText =
-      "High similarity detected. Multiple phrases and sentence structures closely match another submission.";
-  }
-
-  return {
-    similarityScore,
-    explanationText,
-    commonWordCount: matchedKeywords.length,
-    matchedKeywords, // ✅ NEW
-    matchedPhrases, // ✅ NEW
-    note: "Matched phrases are extracted using phrase-level comparison (not exact copy-paste).",
-  };
+  return [...matches].slice(0, limit);
 }
 
 module.exports = {
   extractTextFromPDF,
-  calculateCosineSimilarity,
-  buildHumanReadableExplanation,
+  calculateTFIDFSimilarity,
+  getMatchedPhrases
 };

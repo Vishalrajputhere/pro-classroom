@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Auth from "./components/Auth";
 import Dashboard from "./components/Dashboard";
 import Navbar from "./components/Navbar";
+import Landing from "./components/Landing";
 import { jwtDecode } from "jwt-decode";
 
 function App() {
@@ -72,31 +74,59 @@ function App() {
   if (checkingAuth) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <p className="text-gray-600 font-medium">Checking login...</p>
+        <p className="text-gray-600 font-medium">Checking session...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Navbar ALWAYS visible */}
-      <Navbar
-        isAuthenticated={isAuthenticated}
-        user={user}
-        onLogout={handleLogout}
-      />
+    <BrowserRouter>
+      <div className="min-h-screen bg-gray-100 flex flex-col font-inter">
+        {/* Navbar ALWAYS visible, passes user state down */}
+        <Navbar
+          isAuthenticated={isAuthenticated}
+          user={user}
+          onLogout={handleLogout}
+        />
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        {isAuthenticated ? (
-          <Dashboard />
-        ) : (
-          <div className="flex justify-center">
-            <Auth onAuthSuccess={handleAuthSuccess} />
-          </div>
-        )}
+        {/* Main Routing Area */}
+        <main className="flex-grow">
+          <Routes>
+            <Route 
+              path="/" 
+              element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Landing />} 
+            />
+            
+            <Route 
+              path="/login" 
+              element={
+                isAuthenticated ? (
+                  <Navigate to="/dashboard" replace />
+                ) : (
+                  <div className="max-w-7xl mx-auto px-4 py-12 flex justify-center items-center min-h-[80vh]">
+                    <Auth onAuthSuccess={handleAuthSuccess} />
+                  </div>
+                )
+              } 
+            />
+
+            <Route 
+              path="/dashboard/*" 
+              element={
+                isAuthenticated ? (
+                  <Dashboard />
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              } 
+            />
+
+            {/* Fallback */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
       </div>
-    </div>
+    </BrowserRouter>
   );
 }
 

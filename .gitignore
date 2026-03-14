@@ -15,3 +15,6 @@ Thumbs.db
 
 # Vite
 .vite/
+
+# Personal docs (interview prep, architecture notes)
+docs/
